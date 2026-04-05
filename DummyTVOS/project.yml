@@ -1,0 +1,11 @@
+name: DummyTVOS
+targets:
+  DummyTVOS:
+    type: application
+    platform: tvOS
+    deploymentTarget: "17.0"
+    sources:
+      - App.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.DummyTVOS

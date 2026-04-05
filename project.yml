@@ -1,0 +1,65 @@
+name: Darrao Player
+targets:
+  FluxPlayerDarrao-tvOS:
+    type: application
+    platform: tvOS
+    sources: [FluxPlayer]
+    deploymentTarget: "17.0"
+    info:
+      path: Info-tvOS.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fluxplayer.FluxPlayer-tvOS
+        SDKROOT: appletvos
+        SUPPORTED_PLATFORMS: appletvos appletvsimulator
+        TARGETED_DEVICE_FAMILY: "3"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: "S3YD258U2R"
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+
+  FluxPlayer-Darrao-iOS:
+    type: application
+    platform: iOS
+    sources: [FluxPlayer]
+    deploymentTarget: "16.0"
+    info:
+      path: Info-iOS.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fluxplayer.FluxPlayer-iOS
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: iphoneos iphonesimulator
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: "S3YD258U2R"
+        TARGETED_DEVICE_FAMILY: "1,2" # iPhone and iPad
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  Darrao Player:
+    type: application
+    platform: macOS
+    sources: [FluxPlayer]
+    deploymentTarget: "13.0"
+    info:
+      path: Info-macOS.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fluxplayer.FluxPlayer-macOS
+        CODE_SIGN_ENTITLEMENTS: FluxPlayer/FluxPlayer.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: "S3YD258U2R"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+schemes:
+  FluxPlayerDarrao-tvOS:
+    build:
+      targets:
+        FluxPlayerDarrao-tvOS: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
