@@ -7,7 +7,7 @@ import SwiftUI
 
 struct IPTVPlaylistSelectionView: View {
     @Environment(\.dismiss) private var dismiss
-    var onSelectChannel: (String) -> Void
+    var onSelectChannel: (IPTVChannel) -> Void
 
     /// Icônes SF Symbols associées aux catégories de chaînes.
     private let categoryIcons: [String: String] = [

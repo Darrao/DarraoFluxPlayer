@@ -18,7 +18,7 @@ struct IPTVChannelListView: View {
     @State private var showingActionDialog = false
 
     // Callback quand l'utilisateur choisit une chaîne
-    var onSelectChannel: (String) -> Void
+    var onSelectChannel: (IPTVChannel) -> Void
 
     var availableCategories: [String] {
         var allCats = Set<String>()
@@ -194,7 +194,7 @@ struct IPTVChannelListView: View {
         .searchable(text: $searchText, prompt: "Rechercher une chaîne (ex: France 24)")
         .confirmationDialog("Options de la chaîne", isPresented: $showingActionDialog, presenting: selectedChannel) { channel in
             Button("Lire la chaîne") {
-                onSelectChannel(channel.streamURL.absoluteString)
+                onSelectChannel(channel)
             }
             Button(favorites.isFavorite(channel) ? "Retirer des favoris" : "Ajouter aux favoris") {
                 favorites.toggleFavorite(channel)

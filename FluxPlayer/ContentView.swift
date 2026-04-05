@@ -27,17 +27,21 @@ struct ContentView: View {
     @State private var editingExistingFavorite: IPTVChannel? = nil
 
     @ObservedObject private var favoritesManager = FavoritesManager.shared
+    
+    // État pour les toasts de succès
+    @State private var toastMessage: String?
+    @State private var showingToast: Bool = false
 
     // Historique des flux sauvegardé dans le système (persistant)
     @AppStorage("recentStreams") private var recentStreamsData: String = "[]"
 
-    private var recentStreams: [String] {
+    private var recentStreams: [RecentStream] {
         get {
             guard let data = recentStreamsData.data(using: .utf8),
-                  let urls = try? JSONDecoder().decode([String].self, from: data) else {
+                  let items = try? JSONDecoder().decode([RecentStream].self, from: data) else {
                 return []
             }
-            return urls
+            return items.sorted(by: { $0.date > $1.date })
         }
         nonmutating set {
             if let data = try? JSONEncoder().encode(newValue),
@@ -172,18 +176,18 @@ struct ContentView: View {
             }
             #if os(tvOS)
             .fullScreenCover(isPresented: $showingIPTVBrowser) {
-                IPTVPlaylistSelectionView { streamURL in
+                IPTVPlaylistSelectionView { channel in
                     self.showingIPTVBrowser = false
-                    self.streamURLString = streamURL
-                    self.startPlaying(urlString: streamURL)
+                    self.streamURLString = channel.streamURL.absoluteString
+                    self.startPlaying(channel: channel)
                 }
             }
             #else
             .sheet(isPresented: $showingIPTVBrowser) {
-                IPTVPlaylistSelectionView { streamURL in
+                IPTVPlaylistSelectionView { channel in
                     self.showingIPTVBrowser = false
-                    self.streamURLString = streamURL
-                    self.startPlaying(urlString: streamURL)
+                    self.streamURLString = channel.streamURL.absoluteString
+                    self.startPlaying(channel: channel)
                 }
             }
             #endif
@@ -205,9 +209,11 @@ struct ContentView: View {
                         let newName = customFavoriteName.trimmingCharacters(in: .whitespacesAndNewlines)
                         let finalName = newName.isEmpty ? "Flux personnalisé" : newName
                         favoritesManager.renameFavorite(with: existing.streamURL, newName: finalName)
+                        showToast("Favori renommé : \(finalName)")
                     }
                     Button("Retirer des favoris", role: .destructive) {
                         favoritesManager.removeFavorite(with: existing.streamURL)
+                        showToast("Retiré des favoris")
                     }
                 } else {
                     Button("Ajouter") {
@@ -224,6 +230,7 @@ struct ContentView: View {
                             )
                             if !favoritesManager.isFavorite(newChannel) {
                                 favoritesManager.favorites.append(newChannel)
+                                showToast("Ajouté aux favoris : \(finalName)")
                             }
                         }
                     }
@@ -235,6 +242,22 @@ struct ContentView: View {
                     Text("Entrez le nom pour enregistrer ce flux dans vos favoris.")
                 } else {
                     Text("Modifiez le nom de ce favori ou retirez-le.")
+                }
+            }
+            .overlay(alignment: .top) {
+                if showingToast, let message = toastMessage {
+                    Text(message)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .background(
+                            Capsule().fill(Color.black.opacity(0.8))
+                                .shadow(radius: 10)
+                        )
+                        .padding(.top, 40)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .zIndex(100)
                 }
             }
         }
@@ -413,34 +436,29 @@ struct ContentView: View {
                 .padding(.horizontal, 20)
 
             VStack(spacing: 8) {
-                ForEach(Array(recentStreams.enumerated()), id: \.element) { index, url in
+                ForEach(recentStreams) { item in
                     Button(action: {
-                        streamURLString = url
-                        startPlaying(urlString: url)
+                        streamURLString = item.url
+                        startPlaying(urlString: item.url)
                     }) {
                         HStack(spacing: 12) {
                             Image(systemName: "play.circle.fill")
                                 .font(.system(size: 22))
                                 .foregroundColor(FPTheme.accentBlue.opacity(0.8))
 
-                            Text(url)
-                                .font(.system(size: 13, weight: .regular, design: .monospaced))
-                                .foregroundColor(FPTheme.subtleWhite)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.name)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.white)
+                                
+                                Text(item.url)
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundColor(FPTheme.subtleWhite)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
 
                             Spacer()
-
-                            #if !os(tvOS)
-                            Button(action: { deleteRecentStream(at: IndexSet(integer: index)) }) {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(FPTheme.subtleWhite)
-                                    .frame(width: 26, height: 26)
-                                    .background(Circle().fill(Color.white.opacity(0.08)))
-                            }
-                            .buttonStyle(.plain)
-                            #endif
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -462,6 +480,15 @@ struct ContentView: View {
     // MARK: - Fonctions Logiques
     // ----------------------------------------------------
 
+    private func startPlaying(channel: IPTVChannel) {
+        addRecentStream(name: channel.name, url: channel.streamURL.absoluteString)
+        playerViewModel.startPlaying(url: channel.streamURL)
+
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            self.isPlaying = true
+        }
+    }
+
     private func startPlaying(urlString: String) {
         let cleanURLString = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -472,7 +499,9 @@ struct ContentView: View {
             return
         }
 
-        addRecentStream(url: cleanURLString)
+        // Si on a déjà un nom dans les favoris pour cette URL, on l'utilise
+        let name = favoritesManager.favorites.first(where: { $0.streamURL == url })?.name ?? "Flux manuel"
+        addRecentStream(name: name, url: cleanURLString)
         playerViewModel.startPlaying(url: url)
 
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
@@ -500,12 +529,30 @@ struct ContentView: View {
         self.showingError = true
     }
 
-    private func addRecentStream(url: String) {
-        var streams = recentStreams
-        if let index = streams.firstIndex(of: url) {
-            streams.remove(at: index)
+    private func showToast(_ message: String) {
+        toastMessage = message
+        withAnimation(.spring()) {
+            showingToast = true
         }
-        streams.insert(url, at: 0)
+        
+        // Cacher après 2.5s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            withAnimation(.easeIn) {
+                showingToast = false
+            }
+        }
+    }
+
+    private func addRecentStream(name: String, url: String) {
+        var streams = recentStreams
+        // Retirer les doublons d'URL
+        streams.removeAll { $0.url == url }
+        
+        // Ajouter en haut
+        let newItem = RecentStream(name: name, url: url, date: Date())
+        streams.insert(newItem, at: 0)
+        
+        // Limiter à 10
         if streams.count > 10 {
             streams = Array(streams.prefix(10))
         }

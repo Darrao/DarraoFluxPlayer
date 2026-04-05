@@ -8,6 +8,13 @@ struct IPTVChannel: Identifiable, Hashable, Codable {
     let streamURL: URL
 }
 
+struct RecentStream: Identifiable, Hashable, Codable {
+    var id = UUID()
+    let name: String
+    let url: String
+    let date: Date
+}
+
 struct IPTVPlaylist: Identifiable, Hashable, Codable {
     var id = UUID()
     let title: String
