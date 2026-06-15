@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 // =============================================================================
 // MARK: - AdvancedPlayerControlsView
@@ -167,7 +168,9 @@ struct AdvancedPlayerControlsView: View {
                 }
             }
             .navigationTitle("Réglages FluxPlayer")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("OK") { showSettings = false }

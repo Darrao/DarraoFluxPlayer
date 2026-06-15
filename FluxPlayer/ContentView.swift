@@ -189,7 +189,9 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("FluxPlayer")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
         }
     }
 

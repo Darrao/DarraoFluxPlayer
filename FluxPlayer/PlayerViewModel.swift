@@ -77,7 +77,10 @@ class PlayerViewModel: ObservableObject {
             }
         }
 
-        applyDelayMode()
+        // On configure seulement le buffer selon le mode, SANS forcer de seek au démarrage.
+        // Un flux Live HLS démarre naturellement au live edge, et une VOD démarre à 0.
+        // (Forcer seekToLive ici poussait une VOD jusqu'à sa toute fin avant la détection Live/VOD.)
+        item.preferredForwardBufferDuration = isDelayedMode ? 120.0 : 10.0
         item.preferredPeakBitRate = selectedBitrate
 
         newPlayer.play()
@@ -128,6 +131,8 @@ class PlayerViewModel: ObservableObject {
 
     func seekToLive() {
         guard let item = currentItem else { return }
+        // Ne jamais sauter au "live edge" sur une VOD : ça l'enverrait à la fin de la vidéo.
+        guard isLiveStream else { return }
 
         if let seekableRange = item.seekableTimeRanges.last?.timeRangeValue {
             // Aller presque à la toute fin du live edge
