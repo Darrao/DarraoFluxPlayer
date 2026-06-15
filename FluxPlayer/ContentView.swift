@@ -54,216 +54,316 @@ struct ContentView: View {
     // ----------------------------------------------------
     // MARK: - Vue Principale
     // ----------------------------------------------------
+    // ----------------------------------------------------
+    // MARK: - Vue Principale (TabView)
+    // ----------------------------------------------------
     var body: some View {
+        ZStack(alignment: .bottom) {
+            TabView(selection: $selectedTab) {
+                // ONGLET 1 : ACCUEIL
+                homeTab
+                    .tabItem {
+                        Label("Accueil", systemImage: "house.fill")
+                    }
+                    .tag(0)
+
+                // ONGLET 2 : IPTV
+                iptvTab
+                    .tabItem {
+                        Label("Chaînes", systemImage: "tv.fill")
+                    }
+                    .tag(1)
+
+                // ONGLET 3 : FAVORIS
+                favoritesTab
+                    .tabItem {
+                        Label("Favoris", systemImage: "star.fill")
+                    }
+                    .tag(2)
+            }
+            .accentColor(FPTheme.accentBlue)
+
+            // MINI-PLAYER persistent overlay
+            if isPlaying, !isFullScreen {
+                miniPlayerOverlay
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(10)
+            }
+        }
+        .fullScreenCover(isPresented: $isFullScreen) {
+            VideoPlayerWrapper(player: playerViewModel.player, viewModel: playerViewModel)
+        }
+        .alert("Erreur", isPresented: $showingError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
+        }
+        .onChange(of: playerViewModel.errorMessage) { newValue in
+            if let err = newValue {
+                self.showError(err)
+            }
+        }
+        .alert(editingExistingFavorite == nil ? "Ajouter aux favoris" : "Renommer le favori", isPresented: $showingAddFavoritePrompt) {
+            TextField("Nom (ex: TF1)", text: $customFavoriteName)
+            if let existing = editingExistingFavorite {
+                Button("Enregistrer") {
+                    let newName = customFavoriteName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let finalName = newName.isEmpty ? "Flux personnalisé" : newName
+                    favoritesManager.renameFavorite(with: existing.streamURL, newName: finalName)
+                    showToast("Favori renommé : \(finalName)")
+                }
+                Button("Retirer des favoris", role: .destructive) {
+                    favoritesManager.removeFavorite(with: existing.streamURL)
+                    showToast("Retiré des favoris")
+                }
+            } else {
+                Button("Ajouter") {
+                    let cleanURL = streamURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let url = URL(string: cleanURL) {
+                        let newName = customFavoriteName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let finalName = newName.isEmpty ? "Flux personnalisé" : newName
+                        let newChannel = IPTVChannel(name: finalName, group: "Personnalisé", logoURL: nil, streamURL: url)
+                        if !favoritesManager.isFavorite(newChannel) {
+                            favoritesManager.favorites.append(newChannel)
+                            showToast("Ajouté aux favoris : \(finalName)")
+                        }
+                    }
+                }
+            }
+            Button("Annuler", role: .cancel) { }
+        } message: {
+            Text(editingExistingFavorite == nil ? "Entrez le nom pour enregistrer ce flux." : "Modifiez le nom ou retirez-le.")
+        }
+        .overlay(alignment: .top) {
+            if showingToast, let message = toastMessage {
+                toastView(message: message)
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 800, minHeight: 650)
+        #endif
+    }
+
+    // ----------------------------------------------------
+    // MARK: - États Additionnels
+    // ----------------------------------------------------
+    @State private var selectedTab: Int = 0
+
+    // ----------------------------------------------------
+    // MARK: - Onglets
+    // ----------------------------------------------------
+
+    private var homeTab: some View {
         NavigationStack {
             ZStack {
-                // Fond dégradé global
-                FPTheme.backgroundGradient
-                    .ignoresSafeArea()
-
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 28) {
-
-                        // ── Lecteur inline ──────────────────
-                        if isPlaying, let currentPlayer = playerViewModel.player {
-                            InlineVideoPlayerView(
-                                player: currentPlayer,
-                                viewModel: playerViewModel,
-                                onRefresh: { reloadStream() },
-                                onFullscreen: {
-                                    #if os(macOS)
-                                    if let window = NSApplication.shared.windows.first {
-                                        window.toggleFullScreen(nil)
-                                    }
-                                    #else
-                                    isFullScreen = true
-                                    #endif
-                                },
-                                onClose: { stopPlaying() },
-                                isFavorite: favoritesManager.isFavorite(IPTVChannel(name: "", group: "", logoURL: nil, streamURL: playerViewModel.currentURL ?? URL(string: "about:blank")!)),
-                                onFavorite: {
-                                    if let currentURL = playerViewModel.currentURL {
-                                        let dummy = IPTVChannel(name: "", group: "", logoURL: nil, streamURL: currentURL)
-                                        if let existing = favoritesManager.favorites.first(where: { $0.streamURL == currentURL }) {
-                                            editingExistingFavorite = existing
-                                            customFavoriteName = existing.name
-                                        } else {
-                                            editingExistingFavorite = nil
-                                            customFavoriteName = ""
-                                        }
-                                        showingAddFavoritePrompt = true
-                                    }
-                                }
-                            )
-                            .aspectRatio(16/9, contentMode: .fit)
-                            .frame(maxWidth: 900)
-                            .clipShape(RoundedRectangle(cornerRadius: FPTheme.cornerRadius, style: .continuous))
-                            .shadow(color: FPTheme.accentBlue.opacity(0.15), radius: 30, y: 10)
-                            .padding(.horizontal)
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                            #if os(tvOS)
-                            .focusSection()
-                            #endif
-                        }
-
-                        // ── Contenu du Dashboard ────────────────
-                        #if os(tvOS)
-                        HStack(alignment: .top, spacing: 60) {
-                            // Colonne GAUCHE : Favoris
-                            VStack(alignment: .leading, spacing: 20) {
-                                if !favoritesManager.favorites.isEmpty {
-                                    favoritesSection
-                                        .focusSection()
-                                } else {
-                                    VStack(alignment: .leading, spacing: 14) {
-                                        SectionHeader(title: "Favoris", icon: "star.fill")
-                                        Text("Aucun favori")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
+                FPTheme.backgroundGradient.ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 32) {
+                        headerSection
+                        
+                        // Section Saisie URL (Glassmorphic compact)
+                        urlInputSection
+                        
+                        // Section Favoris Rapides (Carousel)
+                        if !favoritesManager.favorites.isEmpty {
+                            VStack(alignment: .leading, spacing: 16) {
+                                SectionHeader(title: "Vos Favoris", icon: "star.fill", subtitle: "Accès rapide à vos chaînes préférées")
                                     .padding(.horizontal, 20)
-                                }
-                                Spacer()
-                            }
-                            .frame(width: 300)
-
-                            // Colonne DROITE : Actions et Flux récents
-                            VStack(alignment: .leading, spacing: 30) {
-                                urlInputSection
-                                    .focusSection()
-
-                                if !isPlaying {
-                                    actionButtons
-                                        .focusSection()
-                                }
-
-                                if !recentStreams.isEmpty {
-                                    recentStreamsSection
-                                        .focusSection()
-                                }
-                                Spacer()
+                                favoritesCarousel
                             }
                         }
-                        .padding(.horizontal, 40)
-                        #else
-                        // Layout vertical standard (iOS/macOS)
-                        VStack(spacing: 28) {
-                            urlInputSection
 
-                            if !isPlaying {
-                                actionButtons
-                                    .transition(.opacity)
-                            }
-
-                            if !favoritesManager.favorites.isEmpty {
-                                favoritesSection
-                            }
-
-                            if !recentStreams.isEmpty {
-                                recentStreamsSection
+                        // Section Flux Récents
+                        if !recentStreams.isEmpty {
+                            VStack(alignment: .leading, spacing: 16) {
+                                SectionHeader(title: "Récemment lus", icon: "clock.arrow.circlepath", subtitle: "Reprenez là où vous vous êtes arrêté")
+                                    .padding(.horizontal, 20)
+                                recentStreamsList
                             }
                         }
-                        #endif
-
-                        Spacer(minLength: 40)
+                        
+                        Spacer(minLength: 120) // Pour le mini-player
                     }
                     .padding(.vertical, 20)
                 }
             }
-            // Full-screen cover (tvOS / iOS)
-            .tvOSFullScreenCover(isPresented: $isFullScreen) {
-                VideoPlayerWrapper(player: playerViewModel.player, viewModel: playerViewModel)
-            }
-            #if os(tvOS)
-            .fullScreenCover(isPresented: $showingIPTVBrowser) {
-                IPTVPlaylistSelectionView { channel in
-                    self.showingIPTVBrowser = false
-                    self.streamURLString = channel.streamURL.absoluteString
-                    self.startPlaying(channel: channel)
-                }
-            }
-            #else
-            .sheet(isPresented: $showingIPTVBrowser) {
-                IPTVPlaylistSelectionView { channel in
-                    self.showingIPTVBrowser = false
-                    self.streamURLString = channel.streamURL.absoluteString
-                    self.startPlaying(channel: channel)
-                }
-            }
-            #endif
-            .alert("Erreur", isPresented: $showingError) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(errorMessage)
-            }
-            .onChange(of: playerViewModel.errorMessage) { newValue in
-                if let err = newValue {
-                    self.showError(err)
-                }
-            }
-            .alert(editingExistingFavorite == nil ? "Ajouter aux favoris" : "Renommer le favori", isPresented: $showingAddFavoritePrompt) {
-                TextField("Nom (ex: TF1)", text: $customFavoriteName)
+            .navigationTitle("FluxPlayer")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private var iptvTab: some View {
+        IPTVPlaylistSelectionView { channel in
+            self.startPlaying(channel: channel)
+        }
+    }
+
+    private var favoritesTab: some View {
+        NavigationStack {
+            ZStack {
+                FPTheme.backgroundGradient.ignoresSafeArea()
                 
-                if let existing = editingExistingFavorite {
-                    Button("Enregistrer") {
-                        let newName = customFavoriteName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let finalName = newName.isEmpty ? "Flux personnalisé" : newName
-                        favoritesManager.renameFavorite(with: existing.streamURL, newName: finalName)
-                        showToast("Favori renommé : \(finalName)")
-                    }
-                    Button("Retirer des favoris", role: .destructive) {
-                        favoritesManager.removeFavorite(with: existing.streamURL)
-                        showToast("Retiré des favoris")
+                if favoritesManager.favorites.isEmpty {
+                    VStack(spacing: 20) {
+                        Image(systemName: "star.slash")
+                            .font(.system(size: 60))
+                            .foregroundColor(FPTheme.subtleWhite)
+                        Text("Aucun favori pour le moment")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text("Ajoutez des flux manuellement ou parcourez les chaînes IPTV pour les voir ici.")
+                            .font(.subheadline)
+                            .foregroundColor(FPTheme.subtleWhite)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
                     }
                 } else {
-                    Button("Ajouter") {
-                        let cleanURL = streamURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if let url = URL(string: cleanURL) {
-                            let newName = customFavoriteName.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let finalName = newName.isEmpty ? "Flux personnalisé" : newName
-                            
-                            let newChannel = IPTVChannel(
-                                name: finalName,
-                                group: "Personnalisé",
-                                logoURL: nil,
-                                streamURL: url
-                            )
-                            if !favoritesManager.isFavorite(newChannel) {
-                                favoritesManager.favorites.append(newChannel)
-                                showToast("Ajouté aux favoris : \(finalName)")
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 16)], spacing: 16) {
+                            ForEach(favoritesManager.favorites) { channel in
+                                FavoriteChannelCard(channel: channel) {
+                                    startPlaying(channel: channel)
+                                }
+                                .contextMenu {
+                                    Button(role: .destructive) { favoritesManager.removeFavorite(with: channel.streamURL) } label: {
+                                        Label("Retirer", systemImage: "star.slash")
+                                    }
+                                }
                             }
                         }
+                        .padding(20)
+                        Spacer(minLength: 100)
                     }
                 }
-                
-                Button("Annuler", role: .cancel) { }
-            } message: {
-                if editingExistingFavorite == nil {
-                    Text("Entrez le nom pour enregistrer ce flux dans vos favoris.")
-                } else {
-                    Text("Modifiez le nom de ce favori ou retirez-le.")
-                }
             }
-            .overlay(alignment: .top) {
-                if showingToast, let message = toastMessage {
-                    Text(message)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
-                        .background(
-                            Capsule().fill(Color.black.opacity(0.8))
-                                .shadow(radius: 10)
-                        )
-                        .padding(.top, 40)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .zIndex(100)
-                }
+            .navigationTitle("Mes Favoris")
+        }
+    }
+
+    // ----------------------------------------------------
+    // MARK: - Sous-sections Dashboard
+    // ----------------------------------------------------
+
+    private var headerSection: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Bienvenue sur")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(FPTheme.subtleWhite)
+                Text("FluxPlayer Premium")
+                    .font(.system(size: 24, weight: .black))
+                    .foregroundColor(.white)
+            }
+            Spacer()
+            // Placeholder User Profile
+            ZStack {
+                Circle().fill(FPTheme.accentBlue.opacity(0.1)).frame(width: 44, height: 44)
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(FPTheme.accentBlue)
             }
         }
-        #if os(macOS)
-        .frame(minWidth: 700, minHeight: 650)
-        #endif
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+    }
+
+    private var favoritesCarousel: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+                ForEach(favoritesManager.favorites) { channel in
+                    FavoriteChannelCard(channel: channel) {
+                        startPlaying(channel: channel)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 4)
+        }
+    }
+
+    private var recentStreamsList: some View {
+        VStack(spacing: 12) {
+            ForEach(recentStreams.prefix(5)) { item in
+                Button(action: { startPlaying(urlString: item.url) }) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10).fill(FPTheme.accentBlue.opacity(0.2)).frame(width: 48, height: 48)
+                            Image(systemName: "play.fill").foregroundColor(FPTheme.accentBlue)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.name).font(.system(size: 16, weight: .bold)).foregroundColor(.white)
+                            Text(item.url).font(.system(size: 12)).foregroundColor(FPTheme.subtleWhite).lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).foregroundColor(FPTheme.subtleWhite)
+                    }
+                    .padding(12)
+                    .glassBackground(radius: 14)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private var miniPlayerOverlay: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 12) {
+                if let player = playerViewModel.player {
+                    VideoPlayer(player: player)
+                        .frame(width: 100, height: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .onTapGesture { isFullScreen = true }
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Lecture en cours")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(FPTheme.accentBlue)
+                    Text(playerViewModel.currentURL?.absoluteString ?? "Inconnu")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Button(action: { playerViewModel.player?.timeControlStatus == .playing ? playerViewModel.player?.pause() : playerViewModel.player?.play() }) {
+                    Image(systemName: playerViewModel.player?.timeControlStatus == .playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.white)
+                }
+                .padding(.trailing, 8)
+
+                Button(action: { stopPlaying() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(FPTheme.subtleWhite)
+                }
+            }
+            .padding(12)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            .padding(.horizontal, 16)
+            .padding(.bottom, 80) // Just above tab bar
+            .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
+        }
+    }
+
+    private func toastView(message: String) -> some View {
+        Text(message)
+            .font(.system(size: 16, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .background(Capsule().fill(Color.black.opacity(0.8)).shadow(radius: 10))
+            .padding(.top, 40)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .zIndex(100)
     }
 
     // =========================================================================

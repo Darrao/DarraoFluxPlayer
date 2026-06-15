@@ -14,6 +14,9 @@ class PlayerViewModel: ObservableObject {
         }
     }
 
+    @Published var isLiveStream: Bool = true // On assume Live par défaut (IPTV)
+
+
     // Quality Selection: 0 = Auto. Bitrate in bits per second.
     @Published var selectedBitrate: Double = 0 {
         didSet {
@@ -34,6 +37,7 @@ class PlayerViewModel: ObservableObject {
 
     private var timeControlObserver: NSKeyValueObservation?
     private var failedObserver: NSObjectProtocol?
+    private var durationObserver: NSKeyValueObservation?
 
     func startPlaying(url: URL) {
         self.stop() // Clear existing
@@ -63,6 +67,13 @@ class PlayerViewModel: ObservableObject {
         timeControlObserver = newPlayer.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] p, _ in
             DispatchQueue.main.async {
                 self?.isBuffering = p.timeControlStatus == .waitingToPlayAtSpecifiedRate
+            }
+        }
+
+        durationObserver = item.observe(\.duration, options: [.initial, .new]) { [weak self] pItem, _ in
+            DispatchQueue.main.async {
+                // Si la durée est indéfinie, c'est du Live, sinon c'est de la VOD.
+                self?.isLiveStream = pItem.duration.isIndefinite
             }
         }
 
@@ -138,6 +149,7 @@ class PlayerViewModel: ObservableObject {
         currentURL = nil
         errorMessage = nil
         timeControlObserver?.invalidate()
+        durationObserver?.invalidate()
         if let obs = failedObserver {
             NotificationCenter.default.removeObserver(obs)
             failedObserver = nil

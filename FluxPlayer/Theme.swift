@@ -32,11 +32,13 @@ enum FPTheme {
     static let cornerRadius: CGFloat      = 16
     static let smallCornerRadius: CGFloat  = 10
     static let cardPadding: CGFloat        = 16
+    static let minTapTarget: CGFloat       = 44
 
-    // MARK: - Focus (Apple TV)
+    // MARK: - Focus & Touch
 
     static let focusScale: CGFloat         = 1.05
     static let focusShadowRadius: CGFloat  = 20
+    static let touchScale: CGFloat         = 0.98 // Effet de pression sur mobile
 }
 
 // =============================================================================
@@ -134,15 +136,31 @@ struct PillButton: View {
 struct SectionHeader: View {
     let title: String
     let icon: String
+    var subtitle: String? = nil
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundColor(FPTheme.accentBlue)
-                .font(.system(size: 16, weight: .semibold))
-            Text(title)
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.white)
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(FPTheme.accentBlue.opacity(0.15))
+                    .frame(width: 32, height: 32)
+                Image(systemName: icon)
+                    .foregroundColor(FPTheme.accentBlue)
+                    .font(.system(size: 14, weight: .bold))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+                
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(FPTheme.subtleWhite)
+                }
+            }
+            Spacer()
         }
     }
 }

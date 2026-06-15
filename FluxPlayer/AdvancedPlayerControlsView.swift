@@ -19,22 +19,37 @@ struct AdvancedPlayerControlsView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Zone tactile invisible pour afficher/masquer les contrôles
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { toggleControls() }
-                #if os(tvOS)
-                .onPlayPauseCommand { togglePlayPause() }
-                .onMoveCommand { _ in revealControls() }
-                .onExitCommand { 
-                    if showControls {
-                        withAnimation { showControls = false; showSettings = false }
-                    } else {
-                        revealControls()
-                    }
+            // Zone tactile invisible pour afficher/masquer les contrôles et gestes
+            ZStack {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleControls() }
+                
+                // Gestes de Double Tap (Avance/Recul 10s)
+                #if os(iOS)
+                HStack(spacing: 0) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { skipBackward() }
+                    
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { skipForward() }
                 }
-                .focusable(!showControls) // Focusable only when hidden to catch swipes
                 #endif
+            }
+            #if os(tvOS)
+            .onPlayPauseCommand { togglePlayPause() }
+            .onMoveCommand { _ in revealControls() }
+            .onExitCommand { 
+                if showControls {
+                    withAnimation { showControls = false; showSettings = false }
+                } else {
+                    revealControls()
+                }
+            }
+            .focusable(!showControls)
+            #endif
 
             if showControls {
                 // Dégradé sombre en bas pour la lisibilité
@@ -55,16 +70,17 @@ struct AdvancedPlayerControlsView: View {
                     Spacer()
                     controlBar
                 }
-                .padding(.bottom, 16)
+                .padding(.bottom, 24)
                 .padding(.horizontal, 16)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-
-            // Panneau de réglages (s'affiche par-dessus)
-            if showSettings {
-                settingsPanel
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+        }
+        .sheet(isPresented: $showSettings) {
+            settingsPanelMobile
+                #if os(iOS)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                #endif
         }
         .onAppear {
             if isFullScreen {
@@ -80,115 +96,137 @@ struct AdvancedPlayerControlsView: View {
     // =========================================================================
 
     private var controlBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
+            // Play/Pause central (mobile)
+            Button(action: { togglePlayPause() }) {
+                Image(systemName: viewModel.player?.timeControlStatus == .playing ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(FPTheme.accentBlue))
+            }
+            .buttonStyle(.plain)
+
             // Indicateur de buffering
             if viewModel.isBuffering {
                 ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    .tint(.white)
                     .scaleEffect(0.8)
-                    .transition(.opacity)
             }
-
-            // Qualité rapide
-            qualityMenuButton
-
-            // Mode Direct / Différé
-            modeMenuButton
-
-            // Vitesse
-            speedMenuButton
 
             Spacer()
 
-            // Go Live
-            goLiveButton
+            // Bouton Live ou Recommencer selon le type de flux
+            if viewModel.isLiveStream {
+                if !viewModel.isDelayedMode {
+                    goLiveButton
+                }
+            } else {
+                restartButton
+            }
 
             // Bouton Réglages (engrenage)
             settingsButton
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .glassBackground(radius: 14)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .glassBackground(radius: 26)
         #if os(tvOS)
         .focusSection()
         #endif
     }
 
     // =========================================================================
-    // MARK: - Boutons individuels
+    // MARK: - Panneau de Réglages (Mobile Sheet)
     // =========================================================================
 
-    private var qualityMenuButton: some View {
-        Menu {
-            Button(action: { viewModel.selectedBitrate = 0; revealControls() }) {
-                Label("Auto (Max)", systemImage: viewModel.selectedBitrate == 0 ? "checkmark" : "")
-            }
-            Button(action: { viewModel.selectedBitrate = 1_500_000; revealControls() }) {
-                Label("Élevée (HD)", systemImage: viewModel.selectedBitrate == 1_500_000 ? "checkmark" : "")
-            }
-            Button(action: { viewModel.selectedBitrate = 800_000; revealControls() }) {
-                Label("Moyenne (SD)", systemImage: viewModel.selectedBitrate == 800_000 ? "checkmark" : "")
-            }
-            Button(action: { viewModel.selectedBitrate = 400_000; revealControls() }) {
-                Label("Basse (LD)", systemImage: viewModel.selectedBitrate == 400_000 ? "checkmark" : "")
-            }
-        } label: {
-            controlPill(icon: "tv.badge.wifi", text: qualityLabel)
-        }
-        #if os(tvOS)
-        .buttonStyle(.card)
-        #else
-        .buttonStyle(.plain)
-        #endif
-    }
-
-    private var modeMenuButton: some View {
-        Menu {
-            Button(action: { viewModel.isDelayedMode = false; revealControls() }) {
-                Label("Direct (Faible Latence)", systemImage: !viewModel.isDelayedMode ? "checkmark" : "")
-            }
-            Button(action: { viewModel.isDelayedMode = true; revealControls() }) {
-                Label("Différé (Anti-saccades 60s)", systemImage: viewModel.isDelayedMode ? "checkmark" : "")
-            }
-        } label: {
-            controlPill(
-                icon: viewModel.isDelayedMode ? "tortoise.fill" : "bolt.fill",
-                text: viewModel.isDelayedMode ? "Différé" : "Direct",
-                tint: viewModel.isDelayedMode ? FPTheme.warningYellow : FPTheme.successGreen
-            )
-        }
-        #if os(tvOS)
-        .buttonStyle(.card)
-        #else
-        .buttonStyle(.plain)
-        #endif
-    }
-
-    private var speedMenuButton: some View {
-        Menu {
-            ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { speed in
-                Button(action: {
-                    viewModel.playbackSpeed = Float(speed)
-                    revealControls()
-                }) {
-                    Label(
-                        speed == 1.0 ? "Normal (1×)" : "\(speed, specifier: "%.2g")×",
-                        systemImage: viewModel.playbackSpeed == Float(speed) ? "checkmark" : ""
-                    )
+    private var settingsPanelMobile: some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.1, green: 0.1, blue: 0.15).ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        settingGroup(title: "Qualité vidéo", icon: "tv.badge.wifi") {
+                            qualitySettingSection
+                        }
+                        
+                        settingGroup(title: "Vitesse de lecture", icon: "gauge.medium") {
+                            speedSettingSection
+                        }
+                        
+                        if viewModel.isLiveStream {
+                            settingGroup(title: "Mode de lecture", icon: "bolt.fill") {
+                                modeSettingSection
+                            }
+                        }
+                        
+                        Spacer(minLength: 40)
+                    }
+                    .padding(24)
                 }
             }
-        } label: {
-            let speedText = viewModel.playbackSpeed == 1.0 ? "1×" : String(format: "%.2g×", viewModel.playbackSpeed)
-            controlPill(
-                icon: "gauge.medium",
-                text: speedText
-            )
+            .navigationTitle("Réglages FluxPlayer")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("OK") { showSettings = false }
+                        .fontWeight(.bold)
+                }
+            }
         }
-        #if os(tvOS)
-        .buttonStyle(.card)
-        #else
-        .buttonStyle(.plain)
-        #endif
+    }
+
+    private func settingGroup<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(FPTheme.accentBlue)
+                    .font(.system(size: 14, weight: .bold))
+                Text(title)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(FPTheme.subtleWhite)
+            }
+            content()
+        }
+        .padding(16)
+        .background(Color.white.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    // =========================================================================
+    // MARK: - Boutons et Sections
+    // =========================================================================
+
+    private var qualitySettingSection: some View {
+        FlowLayout(spacing: 10) {
+            settingsOption("Auto", selected: viewModel.selectedBitrate == 0) { viewModel.selectedBitrate = 0 }
+            settingsOption("HD", selected: viewModel.selectedBitrate == 1_500_000) { viewModel.selectedBitrate = 1_500_000 }
+            settingsOption("SD", selected: viewModel.selectedBitrate == 800_000) { viewModel.selectedBitrate = 800_000 }
+            settingsOption("LD", selected: viewModel.selectedBitrate == 400_000) { viewModel.selectedBitrate = 400_000 }
+        }
+    }
+
+    private var speedSettingSection: some View {
+        FlowLayout(spacing: 10) {
+            ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { speed in
+                let label = speed == 1.0 ? "Normal" : String(format: "%.2g×", speed)
+                settingsOption(label, selected: viewModel.playbackSpeed == Float(speed)) {
+                    viewModel.playbackSpeed = Float(speed)
+                }
+            }
+        }
+    }
+
+    private var modeSettingSection: some View {
+        HStack(spacing: 10) {
+            settingsOption("Direct", icon: "bolt.fill", selected: !viewModel.isDelayedMode) {
+                viewModel.isDelayedMode = false
+            }
+            settingsOption("Anti-saccades", icon: "tortoise.fill", selected: viewModel.isDelayedMode) {
+                viewModel.isDelayedMode = true
+            }
+        }
     }
 
     private var goLiveButton: some View {
@@ -202,20 +240,34 @@ struct AdvancedPlayerControlsView: View {
                     .fill(Color.white)
                     .frame(width: 7, height: 7)
                 Text("LIVE")
-                    .font(.system(size: 13, weight: .heavy))
+                    .font(.system(size: 11, weight: .heavy))
             }
             .foregroundColor(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(
-                Capsule().fill(FPTheme.liveRed)
-            )
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(FPTheme.liveRed))
         }
-        #if os(tvOS)
-        .buttonStyle(.card)
-        #else
         .buttonStyle(.plain)
-        #endif
+    }
+
+    private var restartButton: some View {
+        Button(action: {
+            viewModel.player?.seek(to: CMTime.zero)
+            viewModel.player?.play()
+            revealControls()
+        }) {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 11, weight: .heavy))
+                Text("RECOMMENCER")
+                    .font(.system(size: 11, weight: .heavy))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Color.white.opacity(0.2)))
+        }
+        .buttonStyle(.plain)
     }
 
     private var settingsButton: some View {
@@ -225,196 +277,64 @@ struct AdvancedPlayerControlsView: View {
             }
             revealControls()
         }) {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: 18, weight: .medium))
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.system(size: 24))
                 .foregroundColor(.white)
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(Color.white.opacity(0.15)))
+                .frame(width: 44, height: 44)
         }
-        #if os(tvOS)
-        .buttonStyle(.card)
-        #else
         .buttonStyle(.plain)
-        #endif
     }
 
-    // =========================================================================
-    // MARK: - Panneau de Réglages
-    // =========================================================================
-
-    private var settingsPanel: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            settingsHeader
-            qualitySettingSection
-            speedSettingSection
-            modeSettingSection
-        }
-        .padding(24)
-        .frame(maxWidth: 500)
-        .glassBackground(radius: 20)
-        .padding(.horizontal, 20)
-        .padding(.bottom, 80)
-    }
-
-    private var settingsHeader: some View {
-        HStack {
-            Text("Réglages")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundColor(.white)
-            Spacer()
-            Button(action: {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                    showSettings = false
-                }
-            }) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(FPTheme.subtleWhite)
-            }
-            #if os(tvOS)
-            .buttonStyle(.card)
-            #else
-            .buttonStyle(.plain)
-            #endif
-        }
-    }
-
-    private var qualitySettingSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Qualité vidéo")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(FPTheme.subtleWhite)
-            HStack(spacing: 10) {
-                settingsOption("Auto", selected: viewModel.selectedBitrate == 0) {
-                    viewModel.selectedBitrate = 0
-                }
-                settingsOption("HD", selected: viewModel.selectedBitrate == 1_500_000) {
-                    viewModel.selectedBitrate = 1_500_000
-                }
-                settingsOption("SD", selected: viewModel.selectedBitrate == 800_000) {
-                    viewModel.selectedBitrate = 800_000
-                }
-                settingsOption("LD", selected: viewModel.selectedBitrate == 400_000) {
-                    viewModel.selectedBitrate = 400_000
-                }
-            }
-        }
-    }
-
-    private var speedSettingSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Vitesse de lecture")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(FPTheme.subtleWhite)
-            HStack(spacing: 10) {
-                ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { speed in
-                    let label = speed == 1.0 ? "Normal" : String(format: "%.2g×", speed)
-                    settingsOption(label, selected: viewModel.playbackSpeed == Float(speed)) {
-                        viewModel.playbackSpeed = Float(speed)
-                    }
-                }
-            }
-        }
-    }
-
-    private var modeSettingSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Mode de lecture")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(FPTheme.subtleWhite)
-            HStack(spacing: 10) {
-                settingsOption("Direct", icon: "bolt.fill", selected: !viewModel.isDelayedMode) {
-                    viewModel.isDelayedMode = false
-                }
-                settingsOption("Anti-saccades", icon: "tortoise.fill", selected: viewModel.isDelayedMode) {
-                    viewModel.isDelayedMode = true
-                }
-            }
-        }
-    }
-
-    // =========================================================================
-    // MARK: - Composants réutilisables
-    // =========================================================================
-
-    /// Pill label utilisée dans la barre de contrôle.
-    private func controlPill(icon: String, text: String, tint: Color = .white) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-            Text(text)
-                .font(.system(size: 12, weight: .semibold))
-        }
-        .foregroundColor(tint)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            Capsule()
-                .fill(Color.white.opacity(0.12))
-                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
-        )
-    }
-
-    /// Bouton de choix dans le panneau de réglages.
     private func settingsOption(_ label: String, icon: String? = nil, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                if let icon = icon {
-                    Image(systemName: icon)
-                        .font(.system(size: 13, weight: .medium))
-                }
-                Text(label)
-                    .font(.system(size: 14, weight: selected ? .bold : .medium))
+            HStack(spacing: 6) {
+                if let icon = icon { Image(systemName: icon).font(.system(size: 12)) }
+                Text(label).font(.system(size: 14, weight: selected ? .bold : .medium))
             }
             .foregroundColor(selected ? .white : FPTheme.subtleWhite)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(
                 Capsule()
-                    .fill(selected ? FPTheme.accentBlue.opacity(0.6) : Color.white.opacity(0.08))
-            )
-            .overlay(
-                Capsule()
-                    .stroke(selected ? FPTheme.accentBlue : Color.clear, lineWidth: 1.5)
+                    .fill(selected ? FPTheme.accentBlue.opacity(0.8) : Color.white.opacity(0.1))
             )
         }
-        #if os(tvOS)
-        .buttonStyle(.card)
-        #else
         .buttonStyle(.plain)
-        #endif
-    }
-
-    /// Label textuel court pour la qualité actuelle.
-    private var qualityLabel: String {
-        switch viewModel.selectedBitrate {
-        case 0:           return "Auto"
-        case 1_500_000:   return "HD"
-        case 800_000:     return "SD"
-        case 400_000:     return "LD"
-        default:          return "Auto"
-        }
     }
 
     // =========================================================================
-    // MARK: - Auto-Hide Logic
+    // MARK: - Logic (Gestures & Hide)
     // =========================================================================
+
+    private func skipForward() {
+        guard let player = viewModel.player else { return }
+        let currentTime = player.currentTime()
+        let newTime = CMTimeAdd(currentTime, CMTime(seconds: 10, preferredTimescale: 600))
+        player.seek(to: newTime)
+        showFeedback("forward")
+    }
+
+    private func skipBackward() {
+        guard let player = viewModel.player else { return }
+        let currentTime = player.currentTime()
+        let newTime = CMTimeSubtract(currentTime, CMTime(seconds: 10, preferredTimescale: 600))
+        player.seek(to: newTime)
+        showFeedback("backward")
+    }
+
+    private func showFeedback(_ direction: String) {
+        // Logique visuelle optionnelle pour le feedback (overlay temporaire)
+        revealControls()
+    }
+
     private func toggleControls() {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            showControls.toggle()
-        }
+        withAnimation(.easeInOut(duration: 0.3)) { showControls.toggle() }
         if showControls && isFullScreen { scheduleHide() }
     }
 
     private func revealControls() {
-        if !showControls {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                showControls = true
-            }
-        }
-        if isFullScreen {
-            scheduleHide()
-        }
+        if !showControls { withAnimation(.easeInOut(duration: 0.25)) { showControls = true } }
+        if isFullScreen { scheduleHide() }
     }
 
     private func scheduleHide() {
@@ -431,11 +351,32 @@ struct AdvancedPlayerControlsView: View {
 
     private func togglePlayPause() {
         guard let player = viewModel.player else { return }
-        if player.timeControlStatus == .playing {
-            player.pause()
-        } else {
-            player.play()
-        }
+        if player.timeControlStatus == .playing { player.pause() } else { player.play() }
         revealControls()
+    }
+}
+
+/// Helper pour disposer les boutons en grille fluide
+struct FlowLayout: View {
+    var spacing: CGFloat
+    let content: [AnyView]
+
+    init<Data: Collection, Content: View>(spacing: CGFloat = 8, data: Data, @ViewBuilder content: @escaping (Data.Element) -> Content) {
+        self.spacing = spacing
+        self.content = data.map { AnyView(content($0)) }
+    }
+
+    init<Content: View>(spacing: CGFloat = 8, @ViewBuilder content: @escaping () -> Content) {
+        self.spacing = spacing
+        // Simplification pour l'exemple
+        self.content = [AnyView(content())]
+    }
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            ForEach(0..<content.count, id: \.self) { index in
+                content[index]
+            }
+        }
     }
 }
