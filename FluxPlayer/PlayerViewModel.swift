@@ -16,6 +16,12 @@ class PlayerViewModel: ObservableObject {
 
     @Published var isLiveStream: Bool = true // On assume Live par défaut (IPTV)
 
+    // Suivi de la progression (pour la timeline / scrubber des VOD)
+    @Published var currentTime: Double = 0
+    @Published var duration: Double = 0
+    @Published var isPlaying: Bool = false
+    @Published var isScrubbing: Bool = false // true pendant qu'on déplace la timeline
+
 
     // Quality Selection: 0 = Auto. Bitrate in bits per second.
     @Published var selectedBitrate: Double = 0 {
@@ -38,6 +44,7 @@ class PlayerViewModel: ObservableObject {
     private var timeControlObserver: NSKeyValueObservation?
     private var failedObserver: NSObjectProtocol?
     private var durationObserver: NSKeyValueObservation?
+    private var periodicTimeObserver: Any?
 
     func startPlaying(url: URL) {
         self.stop() // Clear existing
@@ -67,6 +74,20 @@ class PlayerViewModel: ObservableObject {
         timeControlObserver = newPlayer.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] p, _ in
             DispatchQueue.main.async {
                 self?.isBuffering = p.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                self?.isPlaying = p.timeControlStatus == .playing
+            }
+        }
+
+        // Observateur périodique : met à jour la position et la durée pour la timeline.
+        let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
+        periodicTimeObserver = newPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            guard let self = self else { return }
+            // On ne touche pas à currentTime pendant que l'utilisateur déplace la timeline.
+            if !self.isScrubbing {
+                self.currentTime = time.seconds.isFinite ? time.seconds : 0
+            }
+            if let dur = self.player?.currentItem?.duration, dur.isNumeric {
+                self.duration = dur.seconds
             }
         }
 
@@ -129,6 +150,26 @@ class PlayerViewModel: ObservableObject {
         }
     }
 
+    /// Va à une position absolue (en secondes), bornée à [0, durée].
+    func seek(toSeconds seconds: Double, completion: ((Bool) -> Void)? = nil) {
+        guard let player = player else { completion?(false); return }
+        var target = seconds
+        if duration > 0 { target = min(max(0, target), duration) } else { target = max(0, target) }
+        let t = CMTime(seconds: target, preferredTimescale: 600)
+        // Tolérance nulle = positionnement précis (essentiel pour un scrubber).
+        player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+            completion?(finished)
+        }
+    }
+
+    /// Avance (delta > 0) ou recule (delta < 0) de `delta` secondes par rapport à la position actuelle.
+    func skip(bySeconds delta: Double) {
+        guard let player = player else { return }
+        let current = player.currentTime().seconds
+        let base = current.isFinite ? current : currentTime
+        seek(toSeconds: base + delta)
+    }
+
     func seekToLive() {
         guard let item = currentItem else { return }
         // Ne jamais sauter au "live edge" sur une VOD : ça l'enverrait à la fin de la vidéo.
@@ -149,10 +190,18 @@ class PlayerViewModel: ObservableObject {
     }
 
     func stop() {
+        if let obs = periodicTimeObserver {
+            player?.removeTimeObserver(obs)
+            periodicTimeObserver = nil
+        }
         player?.pause()
         player = nil
         currentURL = nil
         errorMessage = nil
+        currentTime = 0
+        duration = 0
+        isPlaying = false
+        isScrubbing = false
         timeControlObserver?.invalidate()
         durationObserver?.invalidate()
         if let obs = failedObserver {

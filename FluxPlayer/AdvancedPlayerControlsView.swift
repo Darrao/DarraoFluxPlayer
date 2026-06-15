@@ -97,44 +97,142 @@ struct AdvancedPlayerControlsView: View {
     // =========================================================================
 
     private var controlBar: some View {
-        HStack(spacing: 12) {
-            // Play/Pause central (mobile)
-            Button(action: { togglePlayPause() }) {
-                Image(systemName: viewModel.player?.timeControlStatus == .playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(FPTheme.accentBlue))
-            }
-            .buttonStyle(.plain)
-
-            // Indicateur de buffering
-            if viewModel.isBuffering {
-                ProgressView()
-                    .tint(.white)
-                    .scaleEffect(0.8)
+        VStack(spacing: 12) {
+            // Timeline draggable : uniquement pour les VOD (durée connue).
+            if !viewModel.isLiveStream && viewModel.duration > 0 {
+                timelineBar
             }
 
-            Spacer()
-
-            // Bouton Live ou Recommencer selon le type de flux
-            if viewModel.isLiveStream {
-                if !viewModel.isDelayedMode {
-                    goLiveButton
+            HStack(spacing: 14) {
+                // Recul 10s (VOD)
+                if !viewModel.isLiveStream {
+                    skipButton(seconds: -10, icon: "gobackward.10")
                 }
-            } else {
-                restartButton
-            }
 
-            // Bouton Réglages (engrenage)
-            settingsButton
+                // Play/Pause central
+                Button(action: { togglePlayPause() }) {
+                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 48, height: 48)
+                        .background(Circle().fill(FPTheme.accentBlue))
+                }
+                .buttonStyle(.plain)
+
+                // Avance 10s (VOD)
+                if !viewModel.isLiveStream {
+                    skipButton(seconds: 10, icon: "goforward.10")
+                }
+
+                // Indicateur de buffering
+                if viewModel.isBuffering {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(0.8)
+                }
+
+                Spacer()
+
+                // Bouton Live ou Recommencer selon le type de flux
+                if viewModel.isLiveStream {
+                    if !viewModel.isDelayedMode {
+                        goLiveButton
+                    }
+                } else {
+                    restartButton
+                }
+
+                // Bouton Réglages (engrenage)
+                settingsButton
+            }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .glassBackground(radius: 26)
         #if os(tvOS)
         .focusSection()
         #endif
+    }
+
+    // =========================================================================
+    // MARK: - Timeline (Scrubber VOD)
+    // =========================================================================
+
+    private var timelineBar: some View {
+        let dur = max(viewModel.duration, 0.01)
+        let progress = min(max(viewModel.currentTime / dur, 0), 1)
+        return VStack(spacing: 6) {
+            GeometryReader { geo in
+                let width = geo.size.width
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.25))
+                        .frame(height: 5)
+                    Capsule().fill(FPTheme.accentBlue)
+                        .frame(width: max(0, width * progress), height: 5)
+                    Circle().fill(Color.white)
+                        .frame(width: viewModel.isScrubbing ? 18 : 14,
+                                height: viewModel.isScrubbing ? 18 : 14)
+                        .shadow(color: .black.opacity(0.4), radius: 3)
+                        .offset(x: max(0, width * progress) - (viewModel.isScrubbing ? 9 : 7))
+                }
+                .frame(height: 22)
+                .frame(maxHeight: .infinity, alignment: .center)
+                .contentShape(Rectangle())
+                // tvOS : pas de DragGesture (le lecteur natif gère le scrubbing à la télécommande).
+                #if !os(tvOS)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            viewModel.isScrubbing = true
+                            let ratio = min(max(value.location.x / width, 0), 1)
+                            viewModel.currentTime = ratio * dur
+                            revealControls()
+                        }
+                        .onEnded { value in
+                            let ratio = min(max(value.location.x / width, 0), 1)
+                            viewModel.seek(toSeconds: ratio * dur) { _ in
+                                viewModel.isScrubbing = false
+                            }
+                            revealControls()
+                        }
+                )
+                #endif
+            }
+            .frame(height: 22)
+
+            HStack {
+                Text(timeString(viewModel.currentTime))
+                Spacer()
+                Text("-" + timeString(max(0, viewModel.duration - viewModel.currentTime)))
+            }
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .foregroundColor(.white.opacity(0.85))
+        }
+    }
+
+    private func skipButton(seconds: Double, icon: String) -> some View {
+        Button(action: {
+            viewModel.skip(bySeconds: seconds)
+            revealControls()
+        }) {
+            Image(systemName: icon)
+                .font(.system(size: 22, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func timeString(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        let total = Int(seconds)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%d:%02d", m, s)
     }
 
     // =========================================================================
@@ -255,7 +353,7 @@ struct AdvancedPlayerControlsView: View {
 
     private var restartButton: some View {
         Button(action: {
-            viewModel.player?.seek(to: CMTime.zero)
+            viewModel.seek(toSeconds: 0)
             viewModel.player?.play()
             revealControls()
         }) {
@@ -310,18 +408,12 @@ struct AdvancedPlayerControlsView: View {
     // =========================================================================
 
     private func skipForward() {
-        guard let player = viewModel.player else { return }
-        let currentTime = player.currentTime()
-        let newTime = CMTimeAdd(currentTime, CMTime(seconds: 10, preferredTimescale: 600))
-        player.seek(to: newTime)
+        viewModel.skip(bySeconds: 10)
         showFeedback("forward")
     }
 
     private func skipBackward() {
-        guard let player = viewModel.player else { return }
-        let currentTime = player.currentTime()
-        let newTime = CMTimeSubtract(currentTime, CMTime(seconds: 10, preferredTimescale: 600))
-        player.seek(to: newTime)
+        viewModel.skip(bySeconds: -10)
         showFeedback("backward")
     }
 

@@ -319,10 +319,23 @@ struct ContentView: View {
             Spacer()
             HStack(spacing: 12) {
                 if let player = playerViewModel.player {
-                    VideoPlayer(player: player)
-                        .frame(width: 100, height: 56)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .onTapGesture { isFullScreen = true }
+                    ZStack {
+                        VideoPlayer(player: player)
+                            .frame(width: 100, height: 56)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            // AVKit (VideoPlayer) capte les taps pour ses propres contrôles :
+                            // on désactive son hit-testing pour que le tap "plein écran" passe.
+                            .allowsHitTesting(false)
+                        // Indicateur visuel "plein écran" par-dessus la miniature
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(5)
+                            .background(Circle().fill(Color.black.opacity(0.45)))
+                    }
+                    .frame(width: 100, height: 56)
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                    .onTapGesture { isFullScreen = true }
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -340,6 +353,12 @@ struct ContentView: View {
                 Button(action: { playerViewModel.player?.timeControlStatus == .playing ? playerViewModel.player?.pause() : playerViewModel.player?.play() }) {
                     Image(systemName: playerViewModel.player?.timeControlStatus == .playing ? "pause.fill" : "play.fill")
                         .font(.system(size: 18))
+                        .foregroundColor(.white)
+                }
+
+                Button(action: { isFullScreen = true }) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
                 }
 
