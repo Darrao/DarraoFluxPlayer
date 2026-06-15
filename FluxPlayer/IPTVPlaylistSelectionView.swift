@@ -130,7 +130,9 @@ struct IPTVPlaylistSelectionView: View {
                 }
             }
             .navigationTitle("Playlists IPTV")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Fermer") { dismiss() }
@@ -138,6 +140,9 @@ struct IPTVPlaylistSelectionView: View {
                 }
             }
         }
+        #if os(macOS)
+        .frame(minWidth: 600, minHeight: 650)
+        #endif
     }
 
     // =========================================================================
@@ -229,93 +234,6 @@ struct IPTVPlaylistSelectionView: View {
                 .foregroundColor(FPTheme.accentBlue)
                 .frame(width: 44, height: 44)
                 .background(Circle().fill(FPTheme.accentBlue.opacity(0.15)))
-
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .glassBackground(radius: 14)
-    }
-}
-) { dismiss() }
-                }
-            }
-        }
-        #if os(macOS)
-        .frame(minWidth: 600, minHeight: 650)
-        #endif
-    }
-
-    // =========================================================================
-    // MARK: - Composants de carte
-    // =========================================================================
-
-    /// Grande carte pour la playlist globale.
-    private func playlistCard(title: String, icon: String, subtitle: String, gradient: [Color]) -> some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 28, weight: .medium))
-                .foregroundColor(.white)
-                .frame(width: 56, height: 56)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
-                )
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.white)
-                Text(subtitle)
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundColor(FPTheme.subtleWhite)
-            }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(FPTheme.subtleWhite)
-        }
-        .padding(16)
-        .glassBackground(radius: 16)
-    }
-
-    /// Carte compacte pour une langue.
-    private func languageCard(title: String) -> some View {
-        let flag: String = {
-            switch title {
-            case "Français": return "🇫🇷"
-            case "Anglais":  return "🇬🇧"
-            case "Japonais": return "🇯🇵"
-            default:         return "🌐"
-            }
-        }()
-
-        return VStack(spacing: 8) {
-            Text(flag)
-                .font(.system(size: 34))
-            Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
-        }
-        .frame(width: 110, height: 100)
-        .glassBackground(radius: 14)
-    }
-
-    /// Carte pour une catégorie.
-    private func categoryCard(title: String, icon: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 24, weight: .medium))
-                .foregroundColor(FPTheme.accentBlue)
-                .frame(width: 44, height: 44)
-                .background(
-                    Circle().fill(FPTheme.accentBlue.opacity(0.15))
-                )
 
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
