@@ -165,6 +165,10 @@ struct ContentView: View {
                         // Section Saisie URL (Glassmorphic compact)
                         urlInputSection
                         
+                        // Boutons d'action (Lire, Favoris)
+                        actionButtons
+                            .frame(maxWidth: .infinity)
+
                         // Section Favoris Rapides (Carousel)
                         if !favoritesManager.favorites.isEmpty {
                             VStack(alignment: .leading, spacing: 16) {
@@ -338,7 +342,12 @@ struct ContentView: View {
                         .font(.system(size: 18))
                         .foregroundColor(.white)
                 }
-                .padding(.trailing, 8)
+
+                Button(action: { reloadStream() }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                }
 
                 Button(action: { stopPlaying() }) {
                     Image(systemName: "xmark")
