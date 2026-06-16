@@ -789,9 +789,6 @@ struct InlineVideoPlayerView: View {
                     #endif
                 #endif
 
-                // Overlay de contrôles (auto-hide sur tvOS uniquement si plein écran)
-                AdvancedPlayerControlsView(viewModel: viewModel, isFullScreen: false)
-
                 // Boutons flottants (plein écran / fermer)
                 VStack {
                     HStack {
@@ -903,17 +900,18 @@ struct VideoPlayerWrapper: View {
                     MacVideoPlayerView(player: p)
                         .ignoresSafeArea()
                     #else
+                    // Lecteur natif AVKit : il fournit déjà tous les contrôles
+                    // (lecture/pause, défilement, ±10s, plein écran, AirPlay…),
+                    // à la manière de Netflix. Aucun overlay custom par-dessus.
                     VideoPlayer(player: p)
                         .ignoresSafeArea()
-                        #if os(tvOS)
-                        .focusable(false)
-                        #endif
                     #endif
 
-                    // Overlay de contrôles (avec auto-hide)
-                    AdvancedPlayerControlsView(viewModel: viewModel, isFullScreen: true)
-
-                    // Bouton retour
+                    // Bouton retour — iOS/macOS uniquement.
+                    // Sur tvOS, c'est le bouton Menu de la télécommande qui ferme
+                    // le lecteur (voir .onExitCommand), et on laisse le focus au
+                    // lecteur natif pour piloter la lecture à la télécommande.
+                    #if !os(tvOS)
                     VStack {
                         HStack {
                             Spacer()
@@ -928,18 +926,15 @@ struct VideoPlayerWrapper: View {
                                             .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
                                     )
                             }
-                            #if os(tvOS)
-                            .buttonStyle(.card)
-                            #else
                             .buttonStyle(.plain)
-                            #endif
                             .padding(20)
                         }
                         Spacer()
                     }
+                    #endif
                 }
                 #if os(tvOS)
-                .focusSection()
+                .onExitCommand { dismiss() }
                 #endif
                 .onDisappear {
                     // Le parent (ContentView) gère la persistance de la lecture
