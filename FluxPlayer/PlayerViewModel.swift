@@ -1,6 +1,9 @@
 import SwiftUI
 import AVKit
 import Combine
+#if canImport(UIKit)
+import UIKit
+#endif
 
 class PlayerViewModel: ObservableObject {
     @Published var player: AVPlayer?
@@ -68,6 +71,8 @@ class PlayerViewModel: ObservableObject {
 
         let newPlayer = AVPlayer(playerItem: item)
         newPlayer.automaticallyWaitsToMinimizeStalling = true
+        // Empêche la mise en veille de l'écran tant qu'une vidéo est lue.
+        newPlayer.preventsDisplaySleepDuringVideoPlayback = true
 
         self.player = newPlayer
 
@@ -75,6 +80,9 @@ class PlayerViewModel: ObservableObject {
             DispatchQueue.main.async {
                 self?.isBuffering = p.timeControlStatus == .waitingToPlayAtSpecifiedRate
                 self?.isPlaying = p.timeControlStatus == .playing
+                // On garde l'écran allumé pendant la lecture (et le buffering),
+                // et on autorise la veille uniquement quand c'est vraiment en pause.
+                self?.setIdleTimerDisabled(p.timeControlStatus != .paused)
             }
         }
 
@@ -150,6 +158,13 @@ class PlayerViewModel: ObservableObject {
         }
     }
 
+    /// Active/désactive le minuteur d'inactivité du système (mise en veille de l'écran).
+    private func setIdleTimerDisabled(_ disabled: Bool) {
+        #if os(iOS) || os(tvOS)
+        UIApplication.shared.isIdleTimerDisabled = disabled
+        #endif
+    }
+
     /// Va à une position absolue (en secondes), bornée à [0, durée].
     func seek(toSeconds seconds: Double, completion: ((Bool) -> Void)? = nil) {
         guard let player = player else { completion?(false); return }
@@ -190,6 +205,8 @@ class PlayerViewModel: ObservableObject {
     }
 
     func stop() {
+        // On réautorise la mise en veille de l'écran dès qu'on arrête la lecture.
+        setIdleTimerDisabled(false)
         if let obs = periodicTimeObserver {
             player?.removeTimeObserver(obs)
             periodicTimeObserver = nil
